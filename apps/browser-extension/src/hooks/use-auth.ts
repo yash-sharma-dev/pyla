@@ -8,18 +8,56 @@ export type AuthState =
   | { status: "unauthenticated" };
 
 /**
+ * Runs the full Google OAuth flow inside a Chrome identity popup and
+ * bootstraps the Supabase session from the returned tokens.
+ * Throws on failure; callers should catch and surface the error.
+ */
+async function launchGoogleOAuth(): Promise<void> {
+  const redirectUrl = chrome.identity.getRedirectURL();
+
+  const { data, error } = await supabase.auth.signInWithOAuth({
+    provider: "google",
+    options: {
+      redirectTo: redirectUrl,
+      skipBrowserRedirect: true,
+    },
+  });
+  if (error || !data.url) throw error ?? new Error("No OAuth URL returned");
+
+  const callbackUrl = await new Promise<string>((resolve, reject) => {
+    chrome.identity.launchWebAuthFlow(
+      { url: data.url, interactive: true },
+      (responseUrl) => {
+        if (chrome.runtime.lastError) {
+          reject(new Error(chrome.runtime.lastError.message));
+        } else if (!responseUrl) {
+          reject(new Error("No response URL from OAuth flow"));
+        } else {
+          resolve(responseUrl);
+        }
+      },
+    );
+  });
+
+  // Supabase appends tokens as hash fragments on the redirect URL.
+  const params = new URLSearchParams(new URL(callbackUrl).hash.slice(1));
+  const access_token = params.get("access_token");
+  const refresh_token = params.get("refresh_token");
+  if (!access_token || !refresh_token) throw new Error("No tokens in OAuth callback");
+
+  const { error: sessionError } = await supabase.auth.setSession({ access_token, refresh_token });
+  if (sessionError) throw sessionError;
+}
+
+/**
  * React hook that tracks the Supabase auth session in the browser extension.
  *
- * Session bootstrapping after web OAuth is handled by the background service
- * worker (background.ts), which watches tabs.onUpdated for the /auth/extension
- * bridge URL and calls setSession() — writing tokens to chrome.storage.local.
- *
- * On mount this hook:
- *   1. Subscribes to onAuthStateChange (catches setSession() fired by background
- *      if the popup happens to be open at the right moment)
+ * On mount it:
+ *   1. Subscribes to onAuthStateChange (so setSession() from signInWithGoogle
+ *      updates state immediately without a manual poll)
  *   2. Server-validates any existing session via getUser()
- *   3. Polls every 3 s while unauthenticated so the popup detects a completed
- *      web sign-in within 3 seconds of being reopened
+ *   3. Polls every 3 s while unauthenticated (handles edge cases where the
+ *      session was set outside this hook's lifetime)
  */
 export function useAuth() {
   const [authState, setAuthState] = useState<AuthState>({ status: "loading" });
@@ -47,7 +85,7 @@ export function useAuth() {
       }, 3000);
     };
 
-    // Subscribe BEFORE any async work so auth events from setSession() are never missed.
+    // Subscribe BEFORE any async work so setSession() events are never missed.
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_event, session) => {
@@ -76,18 +114,18 @@ export function useAuth() {
     };
   }, []);
 
-  const handleSignIn = useCallback(
-    async (email: string, password: string): Promise<boolean> => {
-      setSignInError(null);
-      const { error } = await supabase.auth.signInWithPassword({ email, password });
-      if (error) {
-        setSignInError(error.message);
-        return false;
+  const handleSignInWithGoogle = useCallback(async (): Promise<void> => {
+    setSignInError(null);
+    try {
+      await launchGoogleOAuth();
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Sign-in failed";
+      // Suppress user-cancelled errors — not an actionable error state.
+      if (!msg.toLowerCase().includes("cancel") && !msg.includes("not approve")) {
+        setSignInError(msg);
       }
-      return true;
-    },
-    [],
-  );
+    }
+  }, []);
 
   const handleSignOut = useCallback(async () => {
     await supabase.auth.signOut();
@@ -95,7 +133,7 @@ export function useAuth() {
 
   return {
     authState,
-    signIn: handleSignIn,
+    signInWithGoogle: handleSignInWithGoogle,
     signOut: handleSignOut,
     signInError,
     loading: authState.status === "loading",

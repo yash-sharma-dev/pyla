@@ -139,16 +139,15 @@ function LogoIcon() {
   );
 }
 
-const PYLA_LOGIN_URL = "https://pyla-web.vercel.app/login";
-
 /* ---- Popup ---- */
 
 function Popup() {
   const dark = useIsDark();
   const tabState = useActiveTab();
-  const { authState, signOut, loading: authLoading } = useAuth();
+  const { authState, signInWithGoogle, signOut, signInError, loading: authLoading } = useAuth();
   const [primaryHover, setPrimaryHover] = useState(false);
   const [primaryActive, setPrimaryActive] = useState(false);
+  const [signingIn, setSigningIn] = useState(false);
 
   const handleCopyCurrent = async () => {
     if (tabState.kind !== "supported") return;
@@ -238,38 +237,58 @@ function Popup() {
       ) : !isSupported ? (
         <UnsupportedState dark={dark} />
       ) : !isAuthenticated ? (
-        <button
-          id="pyla-signin-btn"
-          type="button"
-          onClick={() => void browser.tabs.create({ url: PYLA_LOGIN_URL })}
-          onMouseEnter={() => setPrimaryHover(true)}
-          onMouseLeave={() => {
-            setPrimaryHover(false);
-            setPrimaryActive(false);
-          }}
-          onMouseDown={() => setPrimaryActive(true)}
-          onMouseUp={() => setPrimaryActive(false)}
-          style={{
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            gap: 8,
-            width: "100%",
-            padding: "10px 14px",
-            borderRadius: 10,
-            border: "none",
-            backgroundColor: primaryHover ? "#4f46e5" : "#6366f1",
-            color: "#ffffff",
-            fontSize: 13,
-            fontWeight: 600,
-            fontFamily: FONT_STACK,
-            cursor: "pointer",
-            transform: primaryActive ? "scale(0.97)" : "scale(1)",
-            transition: `background-color ${MOTION.fast} ${MOTION.easeOut}, transform ${MOTION.fast} ${MOTION.spring}`,
-          }}
-        >
-          Sign in to Pyla
-        </button>
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          <button
+            id="pyla-signin-btn"
+            type="button"
+            disabled={signingIn}
+            onClick={() => {
+              setSigningIn(true);
+              void signInWithGoogle().finally(() => setSigningIn(false));
+            }}
+            onMouseEnter={() => setPrimaryHover(true)}
+            onMouseLeave={() => {
+              setPrimaryHover(false);
+              setPrimaryActive(false);
+            }}
+            onMouseDown={() => setPrimaryActive(true)}
+            onMouseUp={() => setPrimaryActive(false)}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: 8,
+              width: "100%",
+              padding: "10px 14px",
+              borderRadius: 10,
+              border: "none",
+              backgroundColor: signingIn ? "#4338ca" : primaryHover ? "#4f46e5" : "#6366f1",
+              color: "#ffffff",
+              fontSize: 13,
+              fontWeight: 600,
+              fontFamily: FONT_STACK,
+              cursor: signingIn ? "not-allowed" : "pointer",
+              opacity: signingIn ? 0.8 : 1,
+              transform: primaryActive && !signingIn ? "scale(0.97)" : "scale(1)",
+              transition: `background-color ${MOTION.fast} ${MOTION.easeOut}, transform ${MOTION.fast} ${MOTION.spring}`,
+            }}
+          >
+            {signingIn ? "Signing in…" : "Sign in with Google"}
+          </button>
+          {signInError && (
+            <p
+              style={{
+                margin: 0,
+                fontSize: 11,
+                color: "#dc2626",
+                textAlign: "center",
+                lineHeight: 1.4,
+              }}
+            >
+              {signInError}
+            </p>
+          )}
+        </div>
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
           {/* Primary: Copy Current */}

@@ -18,7 +18,7 @@ export default defineConfig({
     content_security_policy: {
       extension_pages: "script-src 'self'; object-src 'self';",
     },
-    permissions: ["activeTab", "storage", "scripting"],
+    permissions: ["activeTab", "storage", "identity"],
     host_permissions: [...EXTENSION_HOST_PERMISSIONS, "https://mail.google.com/*", "https://pyla-web.vercel.app/*"],
     icons: {
       16: "icon/16.png",
