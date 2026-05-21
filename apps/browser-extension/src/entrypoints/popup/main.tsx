@@ -349,8 +349,8 @@ function Popup() {
 /* ---- Footer ---- */
 
 const FOOTER_LINKS = [
-  { label: "Website", url: "https://pyla.dev" },
-  { label: "Docs", url: "https://pyla.dev/docs" },
+  { label: "Website", url: "https://pyla-web.vercel.app" },
+  { label: "Dashboard", url: "https://pyla-web.vercel.app/dashboard" },
   { label: "Privacy", url: "https://pyla.dev/privacy" },
   { label: "GitHub", url: "https://github.com/nicepkg/ctxport" },
 ] as const;
