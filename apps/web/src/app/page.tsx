@@ -24,10 +24,7 @@ export default async function RootPage() {
               href="https://github.com/yash-sharma-dev/pyla"
               target="_blank"
               rel="noopener noreferrer"
-              className="text-sm transition-colors"
-              style={{ color: "#6b7280" }}
-              onMouseOver={(e) => (e.currentTarget.style.color = "#f9fafb")}
-              onMouseOut={(e) => (e.currentTarget.style.color = "#6b7280")}
+              className="text-sm text-gray-500 hover:text-white transition-colors"
             >
               GitHub
             </a>
