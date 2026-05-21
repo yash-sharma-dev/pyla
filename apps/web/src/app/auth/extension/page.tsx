@@ -23,7 +23,8 @@ function Bridge() {
       );
     }
 
-    router.replace(next);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    router.replace(next as any);
   }, []);
 
   return null;
