@@ -7,10 +7,43 @@ export type AuthState =
   | { status: "authenticated"; user: User }
   | { status: "unauthenticated" };
 
+const PYLA_WEB_ORIGIN = "https://pyla-web.vercel.app";
+const SESSION_COOKIE = "pyla-ext-session";
+
+/**
+ * Reads the session cookie written by the web app's /auth/callback route after
+ * Google OAuth and calls supabase.setSession() to bootstrap the extension's
+ * session from those tokens. Returns true if setSession() succeeded (which
+ * triggers onAuthStateChange so callers don't need to update state manually).
+ * Removes the cookie immediately after a successful bootstrap.
+ */
+async function tryBootstrapFromCookie(): Promise<boolean> {
+  try {
+    const cookie = await browser.cookies.get({ url: PYLA_WEB_ORIGIN, name: SESSION_COOKIE });
+    if (!cookie?.value) return false;
+    const { access_token, refresh_token } = JSON.parse(cookie.value) as {
+      access_token: string;
+      refresh_token: string;
+    };
+    const { error } = await supabase.auth.setSession({ access_token, refresh_token });
+    if (!error) {
+      await browser.cookies.remove({ url: PYLA_WEB_ORIGIN, name: SESSION_COOKIE });
+    }
+    return !error;
+  } catch {
+    return false;
+  }
+}
+
 /**
  * React hook that tracks the Supabase auth session in the browser extension.
- * Validates against the server on every mount so stale local storage can never
- * produce a false "authenticated" state after the user signs out elsewhere.
+ *
+ * On mount it:
+ *   1. Subscribes to onAuthStateChange first (so setSession() events aren't missed)
+ *   2. Tries to bootstrap from the cookie the web app sets after OAuth
+ *   3. Falls back to server-validated getUser() for an existing extension session
+ *   4. Polls every 3 s (cookie → getUser) while unauthenticated so the popup
+ *      detects a web-app sign-in within 3 seconds without a manual reload
  *
  * @returns `{ authState, signIn, signOut, signInError, loading }`
  */
@@ -28,32 +61,22 @@ export function useAuth() {
       }
     };
 
-    // Poll every 3 s until a valid user appears. Needed because
-    // onAuthStateChange only fires within this JS context — it cannot detect
-    // a sign-in that happens in the web app tab (separate context/window).
     const startPolling = () => {
       if (pollId !== null) return;
       pollId = setInterval(() => {
-        void supabase.auth.getUser().then(({ data, error }) => {
-          if (!error && data.user) {
-            setAuthState({ status: "authenticated", user: data.user });
-            stopPolling();
-          }
+        void tryBootstrapFromCookie().then((ok) => {
+          if (ok) return; // setSession() fired onAuthStateChange; it handles state + stopPolling
+          void supabase.auth.getUser().then(({ data, error }) => {
+            if (!error && data.user) {
+              setAuthState({ status: "authenticated", user: data.user });
+              stopPolling();
+            }
+          });
         });
       }, 3000);
     };
 
-    // Validate against the server on mount — getSession() only reads local
-    // storage and would return stale data after a sign-out elsewhere.
-    void supabase.auth.getUser().then(({ data, error }) => {
-      if (!error && data.user) {
-        setAuthState({ status: "authenticated", user: data.user });
-      } else {
-        setAuthState({ status: "unauthenticated" });
-        startPolling();
-      }
-    });
-
+    // Subscribe BEFORE any async work so auth events from setSession() are never missed.
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_event, session) => {
@@ -64,6 +87,20 @@ export function useAuth() {
         setAuthState({ status: "unauthenticated" });
         startPolling();
       }
+    });
+
+    // Try cookie first (handles returning after web OAuth), then server-validate
+    // the extension's own stored session, then start polling if both miss.
+    void tryBootstrapFromCookie().then((ok) => {
+      if (ok) return; // onAuthStateChange handles state; already subscribed above
+      void supabase.auth.getUser().then(({ data, error }) => {
+        if (!error && data.user) {
+          setAuthState({ status: "authenticated", user: data.user });
+        } else {
+          setAuthState({ status: "unauthenticated" });
+          startPolling();
+        }
+      });
     });
 
     return () => {
