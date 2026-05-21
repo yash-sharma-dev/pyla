@@ -37,10 +37,11 @@ export function SaveButton({ bundle, onToast }: SaveButtonProps) {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const prevStateRef = useRef<SaveState>("idle");
 
-  // Check auth on mount
+  // Check auth on mount via server-validated call so a stale local session
+  // can never produce a false authenticated state.
   useEffect(() => {
-    void supabase.auth.getSession().then(({ data }) => {
-      setIsAuthenticated(!!data.session);
+    void supabase.auth.getUser().then(({ data, error }) => {
+      setIsAuthenticated(!error && !!data.user);
     });
   }, []);
 

@@ -1,15 +1,16 @@
-import type { Session } from "@supabase/supabase-js";
+import type { User } from "@supabase/supabase-js";
 import { useState, useEffect, useCallback } from "react";
 import { supabase } from "~/lib/supabase";
 
 export type AuthState =
   | { status: "loading" }
-  | { status: "authenticated"; session: Session }
+  | { status: "authenticated"; user: User }
   | { status: "unauthenticated" };
 
 /**
  * React hook that tracks the Supabase auth session in the browser extension.
- * Hydrates from chrome.storage.local on mount and subscribes to auth state changes.
+ * Validates against the server on every mount so stale local storage can never
+ * produce a false "authenticated" state after the user signs out elsewhere.
  *
  * @returns `{ authState, signIn, signOut, signInError, loading }`
  */
@@ -17,12 +18,14 @@ export function useAuth() {
   const [authState, setAuthState] = useState<AuthState>({ status: "loading" });
   const [signInError, setSignInError] = useState<string | null>(null);
 
-  // Hydrate session on mount + subscribe to changes
   useEffect(() => {
-    void supabase.auth.getSession().then(({ data }) => {
+    // getUser() hits the Supabase server to validate the token — unlike
+    // getSession() which only reads local storage and returns stale data
+    // if the user has signed out from another device or the web app.
+    void supabase.auth.getUser().then(({ data, error }) => {
       setAuthState(
-        data.session
-          ? { status: "authenticated", session: data.session }
+        !error && data.user
+          ? { status: "authenticated", user: data.user }
           : { status: "unauthenticated" },
       );
     });
@@ -31,8 +34,8 @@ export function useAuth() {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_event, session) => {
       setAuthState(
-        session
-          ? { status: "authenticated", session }
+        session?.user
+          ? { status: "authenticated", user: session.user }
           : { status: "unauthenticated" },
       );
     });
