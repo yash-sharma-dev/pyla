@@ -43,7 +43,8 @@ export function LoginForm() {
     setError(null);
     try {
       await signInWithGoogle(
-        supabase,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        supabase as any,
         `${window.location.origin}/auth/callback`,
       );
     } catch (e) {
