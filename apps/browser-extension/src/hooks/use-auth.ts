@@ -7,49 +7,19 @@ export type AuthState =
   | { status: "authenticated"; user: User }
   | { status: "unauthenticated" };
 
-const PYLA_WEB_ORIGIN = "https://pyla-web.vercel.app";
-
-/**
- * Waits briefly for React to finish writing to localStorage after the bridge
- * page mounts, then reads pyla-ext-tokens from the tab and calls setSession().
- * Returns true if setSession() succeeded (triggers onAuthStateChange).
- */
-async function tryBootstrapFromTab(tabId: number): Promise<boolean> {
-  await new Promise<void>((r) => setTimeout(r, 800));
-  try {
-    const [result] = await browser.scripting.executeScript({
-      target: { tabId },
-      func: () => {
-        const v = window.localStorage.getItem("pyla-ext-tokens");
-        if (v) window.localStorage.removeItem("pyla-ext-tokens");
-        return v;
-      },
-    });
-    const json = result?.result as string | null;
-    if (!json) return false;
-    const { access_token, refresh_token } = JSON.parse(json) as {
-      access_token: string;
-      refresh_token: string;
-    };
-    const { error } = await supabase.auth.setSession({ access_token, refresh_token });
-    return !error;
-  } catch {
-    return false;
-  }
-}
-
 /**
  * React hook that tracks the Supabase auth session in the browser extension.
  *
- * On mount it:
- *   1. Subscribes to onAuthStateChange first (so setSession() events aren't missed)
- *   2. Watches browser.tabs.onUpdated for the /auth/extension bridge URL and
- *      reads tokens from localStorage via executeScript, then calls setSession()
- *   3. Falls back to server-validated getUser() for an existing extension session
- *   4. Polls every 3 s via getUser() while unauthenticated so an already-active
- *      extension session is detected on popup open
+ * Session bootstrapping after web OAuth is handled by the background service
+ * worker (background.ts), which watches tabs.onUpdated for the /auth/extension
+ * bridge URL and calls setSession() — writing tokens to chrome.storage.local.
  *
- * @returns `{ authState, signIn, signOut, signInError, loading }`
+ * On mount this hook:
+ *   1. Subscribes to onAuthStateChange (catches setSession() fired by background
+ *      if the popup happens to be open at the right moment)
+ *   2. Server-validates any existing session via getUser()
+ *   3. Polls every 3 s while unauthenticated so the popup detects a completed
+ *      web sign-in within 3 seconds of being reopened
  */
 export function useAuth() {
   const [authState, setAuthState] = useState<AuthState>({ status: "loading" });
@@ -90,20 +60,7 @@ export function useAuth() {
       }
     });
 
-    // Watch for the bridge tab so we can bootstrap the session from localStorage.
-    const handleTabUpdate = (
-      tabId: number,
-      changeInfo: { status?: string },
-      tab: { url?: string },
-    ) => {
-      if (changeInfo.status !== "complete") return;
-      if (!tab.url?.startsWith(`${PYLA_WEB_ORIGIN}/auth/extension`)) return;
-      void tryBootstrapFromTab(tabId);
-    };
-
-    browser.tabs.onUpdated.addListener(handleTabUpdate);
-
-    // Server-validate any existing extension session on mount.
+    // Server-validate any existing session on mount.
     void supabase.auth.getUser().then(({ data, error }) => {
       if (!error && data.user) {
         setAuthState({ status: "authenticated", user: data.user });
@@ -116,7 +73,6 @@ export function useAuth() {
     return () => {
       subscription.unsubscribe();
       stopPolling();
-      browser.tabs.onUpdated.removeListener(handleTabUpdate);
     };
   }, []);
 
