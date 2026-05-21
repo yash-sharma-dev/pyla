@@ -8,27 +8,30 @@ export type AuthState =
   | { status: "unauthenticated" };
 
 const PYLA_WEB_ORIGIN = "https://pyla-web.vercel.app";
-const SESSION_COOKIE = "pyla-ext-session";
 
 /**
- * Reads the session cookie written by the web app's /auth/callback route after
- * Google OAuth and calls supabase.setSession() to bootstrap the extension's
- * session from those tokens. Returns true if setSession() succeeded (which
- * triggers onAuthStateChange so callers don't need to update state manually).
- * Removes the cookie immediately after a successful bootstrap.
+ * Waits briefly for React to finish writing to localStorage after the bridge
+ * page mounts, then reads pyla-ext-tokens from the tab and calls setSession().
+ * Returns true if setSession() succeeded (triggers onAuthStateChange).
  */
-async function tryBootstrapFromCookie(): Promise<boolean> {
+async function tryBootstrapFromTab(tabId: number): Promise<boolean> {
+  await new Promise<void>((r) => setTimeout(r, 800));
   try {
-    const cookie = await browser.cookies.get({ url: PYLA_WEB_ORIGIN, name: SESSION_COOKIE });
-    if (!cookie?.value) return false;
-    const { access_token, refresh_token } = JSON.parse(cookie.value) as {
+    const [result] = await browser.scripting.executeScript({
+      target: { tabId },
+      func: () => {
+        const v = window.localStorage.getItem("pyla-ext-tokens");
+        if (v) window.localStorage.removeItem("pyla-ext-tokens");
+        return v;
+      },
+    });
+    const json = result?.result as string | null;
+    if (!json) return false;
+    const { access_token, refresh_token } = JSON.parse(json) as {
       access_token: string;
       refresh_token: string;
     };
     const { error } = await supabase.auth.setSession({ access_token, refresh_token });
-    if (!error) {
-      await browser.cookies.remove({ url: PYLA_WEB_ORIGIN, name: SESSION_COOKIE });
-    }
     return !error;
   } catch {
     return false;
@@ -40,10 +43,11 @@ async function tryBootstrapFromCookie(): Promise<boolean> {
  *
  * On mount it:
  *   1. Subscribes to onAuthStateChange first (so setSession() events aren't missed)
- *   2. Tries to bootstrap from the cookie the web app sets after OAuth
+ *   2. Watches browser.tabs.onUpdated for the /auth/extension bridge URL and
+ *      reads tokens from localStorage via executeScript, then calls setSession()
  *   3. Falls back to server-validated getUser() for an existing extension session
- *   4. Polls every 3 s (cookie → getUser) while unauthenticated so the popup
- *      detects a web-app sign-in within 3 seconds without a manual reload
+ *   4. Polls every 3 s via getUser() while unauthenticated so an already-active
+ *      extension session is detected on popup open
  *
  * @returns `{ authState, signIn, signOut, signInError, loading }`
  */
@@ -64,14 +68,11 @@ export function useAuth() {
     const startPolling = () => {
       if (pollId !== null) return;
       pollId = setInterval(() => {
-        void tryBootstrapFromCookie().then((ok) => {
-          if (ok) return; // setSession() fired onAuthStateChange; it handles state + stopPolling
-          void supabase.auth.getUser().then(({ data, error }) => {
-            if (!error && data.user) {
-              setAuthState({ status: "authenticated", user: data.user });
-              stopPolling();
-            }
-          });
+        void supabase.auth.getUser().then(({ data, error }) => {
+          if (!error && data.user) {
+            setAuthState({ status: "authenticated", user: data.user });
+            stopPolling();
+          }
         });
       }, 3000);
     };
@@ -89,23 +90,33 @@ export function useAuth() {
       }
     });
 
-    // Try cookie first (handles returning after web OAuth), then server-validate
-    // the extension's own stored session, then start polling if both miss.
-    void tryBootstrapFromCookie().then((ok) => {
-      if (ok) return; // onAuthStateChange handles state; already subscribed above
-      void supabase.auth.getUser().then(({ data, error }) => {
-        if (!error && data.user) {
-          setAuthState({ status: "authenticated", user: data.user });
-        } else {
-          setAuthState({ status: "unauthenticated" });
-          startPolling();
-        }
-      });
+    // Watch for the bridge tab so we can bootstrap the session from localStorage.
+    const handleTabUpdate = (
+      tabId: number,
+      changeInfo: { status?: string },
+      tab: { url?: string },
+    ) => {
+      if (changeInfo.status !== "complete") return;
+      if (!tab.url?.startsWith(`${PYLA_WEB_ORIGIN}/auth/extension`)) return;
+      void tryBootstrapFromTab(tabId);
+    };
+
+    browser.tabs.onUpdated.addListener(handleTabUpdate);
+
+    // Server-validate any existing extension session on mount.
+    void supabase.auth.getUser().then(({ data, error }) => {
+      if (!error && data.user) {
+        setAuthState({ status: "authenticated", user: data.user });
+      } else {
+        setAuthState({ status: "unauthenticated" });
+        startPolling();
+      }
     });
 
     return () => {
       subscription.unsubscribe();
       stopPolling();
+      browser.tabs.onUpdated.removeListener(handleTabUpdate);
     };
   }, []);
 

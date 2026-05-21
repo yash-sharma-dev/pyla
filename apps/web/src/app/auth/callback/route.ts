@@ -14,24 +14,13 @@ export async function GET(request: Request) {
     const supabase = await createClient();
     const { data, error } = await supabase.auth.exchangeCodeForSession(code);
     if (!error && data.session) {
-      const response = NextResponse.redirect(`${origin}${next}`);
-      // Write tokens to a JS-readable cookie so the browser extension can
-      // bootstrap its session via browser.cookies.get() + supabase.setSession().
-      response.cookies.set(
-        "pyla-ext-session",
-        JSON.stringify({
-          access_token: data.session.access_token,
-          refresh_token: data.session.refresh_token,
-        }),
-        {
-          sameSite: "none",
-          secure: true,
-          httpOnly: false,
-          path: "/",
-          maxAge: 3600,
-        },
-      );
-      return response;
+      // Route through /auth/extension so the browser extension can intercept
+      // the tokens via browser.tabs.onUpdated + scripting.executeScript.
+      const bridgeUrl = new URL(`${origin}/auth/extension`);
+      bridgeUrl.searchParams.set("access_token", data.session.access_token);
+      bridgeUrl.searchParams.set("refresh_token", data.session.refresh_token);
+      bridgeUrl.searchParams.set("next", next);
+      return NextResponse.redirect(bridgeUrl.toString());
     }
   }
 
