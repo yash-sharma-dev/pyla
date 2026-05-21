@@ -75,7 +75,7 @@ async function handleGoogleSignIn(): Promise<{ ok: boolean; error?: string }> {
     const bridgeUrl = `https://pyla-web.vercel.app/auth/extension?access_token=${encodeURIComponent(access_token)}&refresh_token=${encodeURIComponent(refresh_token)}`;
     const tab = await browser.tabs.create({ url: bridgeUrl, active: false });
     if (tab.id) {
-      setTimeout(() => void browser.tabs.remove(tab.id!), 2000);
+      setTimeout(() => void browser.tabs.remove(tab.id!), 5000);
     }
 
     return { ok: true };
