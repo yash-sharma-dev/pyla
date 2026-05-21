@@ -1,0 +1,38 @@
+{
+  "name": "@pyla/supabase",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "description": "Supabase client, types, and data-access helpers for Pyla",
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "development": "./src/index.ts",
+      "import": "./src/index.ts",
+      "default": "./src/index.ts"
+    }
+  },
+  "files": ["dist", "src"],
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "typecheck": "tsc -b --pretty false"
+  },
+  "dependencies": {
+    "@pyla/core-schema": "workspace:*",
+    "@supabase/supabase-js": "^2.49.4"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:tooling",
+    "tsup": "catalog:tooling",
+    "typescript": "catalog:tooling"
+  },
+  "peerDependencies": {
+    "typescript": ">=5.0.0"
+  }
+}

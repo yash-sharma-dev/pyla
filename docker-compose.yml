@@ -1,0 +1,81 @@
+# Pyla — Docker Compose
+# Spins up the full local stack with one command: docker compose up
+#
+# Prerequisites:
+#   - Copy .env.example → .env and fill in your Supabase credentials
+#   - Docker Desktop (or Docker Engine + Compose plugin) installed
+#
+# Services:
+#   web        → http://localhost:3000   (Next.js dashboard)
+#   mcp-server → stdio MCP (see note below)
+
+name: pyla
+
+# ---------------------------------------------------------------------------
+# Re-usable anchor: inject env vars into every service from .env at repo root
+# ---------------------------------------------------------------------------
+x-supabase-env: &supabase-env
+  NEXT_PUBLIC_SUPABASE_URL: ${NEXT_PUBLIC_SUPABASE_URL:-${VITE_SUPABASE_URL}}
+  NEXT_PUBLIC_SUPABASE_ANON_KEY: ${NEXT_PUBLIC_SUPABASE_ANON_KEY:-${VITE_SUPABASE_ANON_KEY}}
+  VITE_SUPABASE_URL: ${VITE_SUPABASE_URL}
+  VITE_SUPABASE_ANON_KEY: ${VITE_SUPABASE_ANON_KEY}
+
+services:
+  # ─────────────────────────────────────────────
+  # Web Dashboard — Next.js
+  # ─────────────────────────────────────────────
+  web:
+    build:
+      context: .                          # repo root (Dockerfile copies from here)
+      dockerfile: apps/web/Dockerfile
+      args:
+        # NEXT_PUBLIC_ vars must be baked in at build time (static bundle)
+        NEXT_PUBLIC_SUPABASE_URL: ${NEXT_PUBLIC_SUPABASE_URL:-${VITE_SUPABASE_URL}}
+        NEXT_PUBLIC_SUPABASE_ANON_KEY: ${NEXT_PUBLIC_SUPABASE_ANON_KEY:-${VITE_SUPABASE_ANON_KEY}}
+    image: pyla/web:local
+    container_name: pyla-web
+    ports:
+      - "3000:3000"       # expose on 3000 regardless of internal dev port
+    environment:
+      <<: *supabase-env
+      NODE_ENV: production
+      PORT: 3000
+      HOSTNAME: "0.0.0.0"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://0.0.0.0:3000/api/health || wget -qO- http://0.0.0.0:3000 || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+
+  # ─────────────────────────────────────────────
+  # MCP Server — Node.js / stdio transport
+  #
+  # NOTE: The MCP server communicates over stdin/stdout (not HTTP).
+  # This container is kept alive so you can attach your MCP client:
+  #
+  #   docker exec -i pyla-mcp-server node /app/apps/mcp-server/dist/index.js
+  #
+  # Or update your Cursor / Claude Desktop mcp.json:
+  #   "command": "docker",
+  #   "args": ["exec", "-i", "pyla-mcp-server", "node", "/app/dist/index.js"]
+  # ─────────────────────────────────────────────
+  mcp-server:
+    build:
+      context: .
+      dockerfile: apps/mcp-server/Dockerfile
+    image: pyla/mcp-server:local
+    container_name: pyla-mcp-server
+    ports:
+      - "3001:3001"       # reserved for future HTTP/SSE transport
+    env_file:
+      - .env
+    environment:
+      <<: *supabase-env
+      PYLA_API_KEY: ${PYLA_API_KEY}
+      NODE_ENV: production
+    restart: unless-stopped
+    # Keep container alive without the MCP stdio connection
+    stdin_open: true
+    tty: false

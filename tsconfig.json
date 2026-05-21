@@ -1,0 +1,11 @@
+{
+  "files": [],
+  "references": [
+    { "path": "./packages/core-schema" },
+    { "path": "./packages/core-plugins" },
+    { "path": "./packages/core-markdown" },
+    { "path": "./packages/shared-ui" },
+    { "path": "./apps/browser-extension" },
+    { "path": "./apps/web" }
+  ]
+}

@@ -1,0 +1,80 @@
+# ==============================================================
+# .dockerignore — Pyla monorepo
+# Keeps build context lean. Rules apply relative to the repo root
+# (the context: . used in docker-compose.yml).
+# ==============================================================
+
+# ── Version control ─────────────────────────────────────────
+.git
+.github
+.gitignore
+
+# ── Node modules (re-installed inside the builder stage) ────
+node_modules
+**/node_modules
+
+# ── Build artefacts (rebuilt inside the builder stage) ──────
+**/dist
+**/.next
+**/.open-next
+**/.wxt
+**/out
+**/.out
+**/build
+
+# ── Turbo / pnpm cache ──────────────────────────────────────
+**/.turbo
+**/.cache
+**/tsconfig.tsbuildinfo
+**/*.tsbuildinfo
+
+# ── Environment / secrets (injected at runtime via .env) ────
+.env
+.env.local
+.env.*.local
+**/.env.local
+
+# ── OS artefacts ────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+
+# ── IDE / editor ────────────────────────────────────────────
+.idea
+*.swp
+*.swo
+*~
+
+# ── Test & coverage ─────────────────────────────────────────
+coverage
+**/.coverage
+**/.pytest_cache
+
+# ── Logs ────────────────────────────────────────────────────
+logs/
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# ── Docs & misc (not needed for build) ──────────────────────
+docs/
+*.md
+!README.md
+CHANGELOG.md
+CODE_OF_CONDUCT.md
+CONTRIBUTING.md
+SECURITY.md
+LICENSE
+
+# ── Chrome extension (not dockerised) ───────────────────────
+apps/browser-extension
+
+# ── Supabase migrations (cloud-only) ────────────────────────
+supabase/
+
+# ── AI / project-specific ───────────────────────────────────
+.claude
+memories/
+tasks/
+scripts/
+configs/
+product-materials/

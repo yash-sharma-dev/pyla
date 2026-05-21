@@ -1,0 +1,61 @@
+{
+  "name": "pyla",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@10.28.1",
+  "description": "Pyla - AI Context Bundle for seamless context migration between AI tools",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/nicepkg/ctxport.git"
+  },
+  "license": "MIT",
+  "scripts": {
+    "dev": "turbo run dev",
+    "dev:ext": "turbo run dev --filter=@pyla/extension",
+    "dev:web": "turbo run dev --filter=@pyla/web",
+    "dev:mcp": "turbo run dev --filter=@pyla/mcp-server",
+    "dev:packages": "turbo run dev --filter='./packages/*'",
+    "build": "turbo run build",
+    "build:ext": "turbo run build --filter=@pyla/extension",
+    "build:web": "turbo run build --filter=@pyla/web",
+    "build:mcp": "turbo run build --filter=@pyla/mcp-server",
+    "build:packages": "turbo run build --filter='./packages/*'",
+    "build:packages:watch": "turbo watch build --filter='./packages/*'",
+    "test": "turbo run test",
+    "test:watch": "turbo run test:watch",
+    "lint": "turbo run lint",
+    "lint:fix": "turbo run lint:fix",
+    "typecheck": "turbo run typecheck",
+    "typecheck:watch": "turbo watch typecheck",
+    "clean": "rm -rf node_modules packages/*/node_modules packages/*/dist apps/*/node_modules apps/*/.next apps/*/.open-next apps/*/.output .turbo **/.turbo",
+    "prepare": "husky",
+    "release": "semantic-release",
+    "release:dry": "semantic-release --dry-run"
+  },
+  "engines": {
+    "node": ">=22.0.0",
+    "pnpm": ">=10.0.0"
+  },
+  "devDependencies": {
+    "@commitlint/cli": "^20.4.1",
+    "@commitlint/config-conventional": "^20.4.1",
+    "@commitlint/types": "^20.4.0",
+    "@semantic-release/changelog": "^6.0.3",
+    "@semantic-release/exec": "^7.1.0",
+    "@semantic-release/git": "^10.0.1",
+    "conventional-changelog-conventionalcommits": "^9.1.0",
+    "eslint": "catalog:tooling",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-import": "^2.32.0",
+    "eslint-plugin-prettier": "^5.5.5",
+    "globals": "^17.3.0",
+    "husky": "^9.1.7",
+    "prettier": "catalog:tooling",
+    "prettier-plugin-tailwindcss": "^0.7.2",
+    "semantic-release": "^25.0.3",
+    "turbo": "^2.8.3",
+    "typescript": "catalog:tooling",
+    "typescript-eslint": "catalog:tooling"
+  }
+}

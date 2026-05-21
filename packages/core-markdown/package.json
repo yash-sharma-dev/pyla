@@ -1,0 +1,44 @@
+{
+  "name": "@pyla/core-markdown",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "description": "Markdown Context Bundle serializer for Pyla",
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "development": "./src/index.ts",
+      "import": "./src/index.ts",
+      "default": "./src/index.ts"
+    }
+  },
+  "files": [
+    "dist",
+    "src"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "typecheck": "tsc -b --pretty false",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@pyla/core-schema": "workspace:*",
+    "tokenx": "^1.3.0"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:tooling",
+    "tsup": "catalog:tooling",
+    "typescript": "catalog:tooling",
+    "vitest": "catalog:tooling"
+  },
+  "peerDependencies": {
+    "typescript": ">=5.0.0"
+  }
+}

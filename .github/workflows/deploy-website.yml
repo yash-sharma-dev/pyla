@@ -1,0 +1,235 @@
+name: Deploy Website to Cloudflare
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'apps/web/**'
+      - 'packages/**'
+      - 'pnpm-lock.yaml'
+      - '.github/workflows/deploy-website.yml'
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'apps/web/**'
+      - 'packages/**'
+      - 'pnpm-lock.yaml'
+      - '.github/workflows/deploy-website.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-website-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Project Configuration - Update these values for your project
+  PROJECT_NAME: 'ctxport'
+  SITE_DOMAIN: 'ctxport.xiaominglab.com'
+  WEBSITE_DIR: 'apps/web'
+  TURBO_TELEMETRY_DISABLED: 1
+  TURBO_CACHE_DIR: .turbo
+
+  # Comment marker (used to update existing PR comment instead of spamming)
+  PREVIEW_COMMENT_MARKER: '<!-- CF_PAGES_PREVIEW_COMMENT -->'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Node.js and pnpm
+        uses: ./.github/actions/setup-node-pnpm
+
+      - name: Cache turbo
+        uses: actions/cache@v5
+        with:
+          path: .turbo
+          key: ${{ runner.os }}-turbo-${{ hashFiles('turbo.json', 'pnpm-lock.yaml', '**/package.json', '**/tsconfig*.json') }}
+          restore-keys: |
+            ${{ runner.os }}-turbo-
+
+      - name: Build website with Turbo
+        run: pnpm turbo run build:cf --filter=@ctxport/web
+        env:
+          NEXT_PUBLIC_SITE_URL: https://${{ env.SITE_DOMAIN }}
+          NEXT_PUBLIC_GIT_SHA: ${{ github.sha }}
+          SKIP_ENV_VALIDATION: true
+
+      - name: Verify build output
+        working-directory: ${{ env.WEBSITE_DIR }}
+        run: |
+          echo "Checking .open-next directory..."
+          ls -la .open-next/ || (echo "ERROR: .open-next directory not found!" && exit 1)
+          echo "Build output verified."
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v6
+        with:
+          name: website-build
+          path: |
+            ${{ env.WEBSITE_DIR }}/.open-next/
+            ${{ env.WEBSITE_DIR }}/wrangler.jsonc
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 1
+
+  deploy:
+    runs-on: ubuntu-latest
+    needs: build
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    permissions:
+      contents: read
+      deployments: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Node.js and pnpm
+        uses: ./.github/actions/setup-node-pnpm
+        with:
+          install-dependencies: 'false'
+
+      - name: Download build artifact
+        uses: actions/download-artifact@v7
+        with:
+          name: website-build
+          path: ${{ env.WEBSITE_DIR }}
+
+      - name: Deploy to Cloudflare
+        working-directory: ${{ env.WEBSITE_DIR }}
+        run: pnpm dlx @opennextjs/cloudflare deploy
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
+  preview:
+    runs-on: ubuntu-latest
+    needs: build
+    if: github.event_name == 'pull_request'
+    permissions:
+      contents: read
+      deployments: write
+      pull-requests: write
+      issues: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Node.js and pnpm
+        uses: ./.github/actions/setup-node-pnpm
+        with:
+          install-dependencies: 'false'
+
+      - name: Download build artifact
+        uses: actions/download-artifact@v7
+        with:
+          name: website-build
+          path: ${{ env.WEBSITE_DIR }}
+
+      - name: Resolve preview deploy eligibility
+        id: preview_eligibility
+        shell: bash
+        env:
+          CF_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CF_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          if [[ -n "${CF_API_TOKEN}" && -n "${CF_ACCOUNT_ID}" ]]; then
+            echo "can_deploy=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "can_deploy=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Deploy Preview to Cloudflare
+        id: deploy
+        if: ${{ steps.preview_eligibility.outputs.can_deploy == 'true' }}
+        working-directory: ${{ env.WEBSITE_DIR }}
+        run: pnpm dlx @opennextjs/cloudflare deploy --env preview
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
+      - name: Upsert PR comment with preview URL (no spam)
+        if: ${{ always() && (steps.deploy.outcome == 'success' || steps.deploy.outcome == 'skipped') && github.event.pull_request.head.repo.fork == false }}
+        uses: actions/github-script@v8
+        env:
+          MARKER: ${{ env.PREVIEW_COMMENT_MARKER }}
+          DEPLOYMENT_URL: ${{ steps.deploy.outputs.deployment-url }}
+          DEPLOY_OUTCOME: ${{ steps.deploy.outcome }}
+          HEAD_IS_FORK: ${{ github.event.pull_request.head.repo.fork }}
+          HAS_CF_SECRETS: ${{ steps.preview_eligibility.outputs.can_deploy }}
+        with:
+          script: |
+            const marker = process.env.MARKER;
+            const url = process.env.DEPLOYMENT_URL || "";
+            const deployOutcome = (process.env.DEPLOY_OUTCOME || "").toLowerCase();
+            const isFork = (process.env.HEAD_IS_FORK || "").toLowerCase() === "true";
+            const hasCfSecrets = (process.env.HAS_CF_SECRETS || "").toLowerCase() === "true";
+
+            const baseMeta = `- Branch: \`${context.payload.pull_request.head.ref}\`
+            - Commit: \`${context.sha}\``;
+
+            let body;
+            if (deployOutcome === "success") {
+              body = `${marker}
+              ## 🚀 Preview Deployment Ready!
+
+              Preview URL: ${url || "Check the Cloudflare dashboard for the preview URL."}
+
+              ${baseMeta}
+
+              (This comment will be updated on new pushes.)
+              `;
+            } else if (!hasCfSecrets && isFork) {
+              body = `${marker}
+              ## ℹ️ Preview Deployment Skipped
+
+              This PR comes from a fork, and repository Cloudflare secrets are not exposed to \`pull_request\` workflows.
+
+              ${baseMeta}
+
+              (This comment will be updated on new pushes.)
+              `;
+            } else {
+              body = `${marker}
+              ## ℹ️ Preview Deployment Skipped
+
+              Preview deployment was skipped because required Cloudflare secrets are missing.
+
+              ${baseMeta}
+
+              (This comment will be updated on new pushes.)
+              `;
+            }
+
+            const { owner, repo } = context.repo;
+            const issue_number = context.issue.number;
+
+            // List recent comments and find the one with our marker
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              owner,
+              repo,
+              issue_number,
+              per_page: 100,
+            });
+
+            const existing = comments.find(c => (c.body || '').includes(marker));
+
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner,
+                repo,
+                comment_id: existing.id,
+                body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner,
+                repo,
+                issue_number,
+                body,
+              });
+            }

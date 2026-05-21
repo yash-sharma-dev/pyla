@@ -1,0 +1,29 @@
+{
+  "extends": ["//"],
+  "tasks": {
+    "prepare": {
+      "cache": true,
+      "outputs": [".wxt/**"]
+    },
+    "build": {
+      "dependsOn": ["prepare"],
+      "outputs": ["dist/**"]
+    },
+    "build:firefox": {
+      "dependsOn": ["prepare"],
+      "outputs": ["dist/**"]
+    },
+    "zip": {
+      "outputs": ["dist/**/*.zip", ".output/**/*.zip"]
+    },
+    "zip:firefox": {
+      "outputs": ["dist/**/*.zip", ".output/**/*.zip"]
+    },
+    "lint": {
+      "dependsOn": ["prepare"]
+    },
+    "typecheck": {
+      "dependsOn": ["prepare"]
+    }
+  }
+}
