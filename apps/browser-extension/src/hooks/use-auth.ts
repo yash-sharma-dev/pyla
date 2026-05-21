@@ -19,28 +19,57 @@ export function useAuth() {
   const [signInError, setSignInError] = useState<string | null>(null);
 
   useEffect(() => {
-    // getUser() hits the Supabase server to validate the token — unlike
-    // getSession() which only reads local storage and returns stale data
-    // if the user has signed out from another device or the web app.
+    let pollId: ReturnType<typeof setInterval> | null = null;
+
+    const stopPolling = () => {
+      if (pollId !== null) {
+        clearInterval(pollId);
+        pollId = null;
+      }
+    };
+
+    // Poll every 3 s until a valid user appears. Needed because
+    // onAuthStateChange only fires within this JS context — it cannot detect
+    // a sign-in that happens in the web app tab (separate context/window).
+    const startPolling = () => {
+      if (pollId !== null) return;
+      pollId = setInterval(() => {
+        void supabase.auth.getUser().then(({ data, error }) => {
+          if (!error && data.user) {
+            setAuthState({ status: "authenticated", user: data.user });
+            stopPolling();
+          }
+        });
+      }, 3000);
+    };
+
+    // Validate against the server on mount — getSession() only reads local
+    // storage and would return stale data after a sign-out elsewhere.
     void supabase.auth.getUser().then(({ data, error }) => {
-      setAuthState(
-        !error && data.user
-          ? { status: "authenticated", user: data.user }
-          : { status: "unauthenticated" },
-      );
+      if (!error && data.user) {
+        setAuthState({ status: "authenticated", user: data.user });
+      } else {
+        setAuthState({ status: "unauthenticated" });
+        startPolling();
+      }
     });
 
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_event, session) => {
-      setAuthState(
-        session?.user
-          ? { status: "authenticated", user: session.user }
-          : { status: "unauthenticated" },
-      );
+      if (session?.user) {
+        setAuthState({ status: "authenticated", user: session.user });
+        stopPolling();
+      } else {
+        setAuthState({ status: "unauthenticated" });
+        startPolling();
+      }
     });
 
-    return () => subscription.unsubscribe();
+    return () => {
+      subscription.unsubscribe();
+      stopPolling();
+    };
   }, []);
 
   const handleSignIn = useCallback(
