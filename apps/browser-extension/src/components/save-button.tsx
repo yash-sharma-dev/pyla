@@ -69,15 +69,11 @@ export function SaveButton({ bundle, onToast }: SaveButtonProps) {
   const handleClick = useCallback(async () => {
     if (!bundle) return;
     if (!isAuthenticated) {
-      onToast({
-        title: "Pyla · Sign in required",
-        subtitle: "Open the Pyla popup to sign in",
-        type: "error",
-      });
+      window.open("https://pyla-web.vercel.app/login", "_blank");
       return;
     }
     await save(bundle);
-  }, [bundle, isAuthenticated, save, onToast]);
+  }, [bundle, isAuthenticated, save]);
 
   const isIdle = state === "idle";
   const isLoading = state === "loading";

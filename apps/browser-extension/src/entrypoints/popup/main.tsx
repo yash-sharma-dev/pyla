@@ -1,6 +1,6 @@
 import { registerBuiltinPlugins, findPlugin, registerPlugin } from "@pyla/core-plugins";
 import { gmailPlugin } from "~/plugins/gmail/plugin";
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect } from "react";
 import { createRoot } from "react-dom/client";
 import {
   EXTENSION_RUNTIME_MESSAGE,
@@ -139,121 +139,14 @@ function LogoIcon() {
   );
 }
 
-/* ---- Sign-in form ---- */
-
-function SignInForm({
-  dark,
-  onSignIn,
-  error,
-}: {
-  dark: boolean;
-  onSignIn: (email: string, password: string) => Promise<boolean>;
-  error: string | null;
-}) {
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [loading, setLoading] = useState(false);
-
-  const inputStyle: React.CSSProperties = {
-    width: "100%",
-    padding: "8px 10px",
-    borderRadius: 8,
-    border: dark
-      ? "1px solid rgba(255,255,255,0.12)"
-      : "1px solid rgba(0,0,0,0.12)",
-    backgroundColor: dark ? "rgba(255,255,255,0.06)" : "rgba(0,0,0,0.03)",
-    color: dark ? "#f9fafb" : "#111827",
-    fontSize: 13,
-    fontFamily: FONT_STACK,
-    outline: "none",
-    boxSizing: "border-box",
-  };
-
-  const handleSubmit = useCallback(
-    async (e: React.FormEvent) => {
-      e.preventDefault();
-      setLoading(true);
-      await onSignIn(email, password);
-      setLoading(false);
-    },
-    [email, password, onSignIn],
-  );
-
-  return (
-    <form
-      onSubmit={(e) => void handleSubmit(e)}
-      style={{ display: "flex", flexDirection: "column", gap: 8 }}
-    >
-      <p
-        style={{
-          fontSize: 12,
-          color: dark ? "#9ca3af" : "#6b7280",
-          margin: "0 0 4px",
-        }}
-      >
-        Sign in to save Capsules to the cloud.
-      </p>
-      <input
-        id="pyla-email"
-        type="email"
-        placeholder="Email"
-        value={email}
-        onChange={(e) => setEmail(e.target.value)}
-        required
-        autoComplete="email"
-        style={inputStyle}
-      />
-      <input
-        id="pyla-password"
-        type="password"
-        placeholder="Password"
-        value={password}
-        onChange={(e) => setPassword(e.target.value)}
-        required
-        autoComplete="current-password"
-        style={inputStyle}
-      />
-      {error && (
-        <p
-          style={{
-            fontSize: 11,
-            color: "#dc2626",
-            margin: 0,
-          }}
-        >
-          {error}
-        </p>
-      )}
-      <button
-        id="pyla-signin-btn"
-        type="submit"
-        disabled={loading}
-        style={{
-          padding: "8px 14px",
-          borderRadius: 8,
-          border: "none",
-          backgroundColor: "#6366f1",
-          color: "#fff",
-          fontSize: 13,
-          fontWeight: 600,
-          fontFamily: FONT_STACK,
-          cursor: loading ? "wait" : "pointer",
-          opacity: loading ? 0.7 : 1,
-          transition: `opacity ${MOTION.fast} ${MOTION.easeOut}`,
-        }}
-      >
-        {loading ? "Signing in…" : "Sign in"}
-      </button>
-    </form>
-  );
-}
+const PYLA_LOGIN_URL = "https://pyla-web.vercel.app/login";
 
 /* ---- Popup ---- */
 
 function Popup() {
   const dark = useIsDark();
   const tabState = useActiveTab();
-  const { authState, signIn, signOut, signInError, loading: authLoading } = useAuth();
+  const { authState, signOut, loading: authLoading } = useAuth();
   const [primaryHover, setPrimaryHover] = useState(false);
   const [primaryActive, setPrimaryActive] = useState(false);
 
@@ -330,15 +223,8 @@ function Popup() {
         Capture AI conversations as portable Capsules.
       </p>
 
-      {/* Auth section — only shown when not authenticated */}
-      {!authLoading && !isAuthenticated && (
-        <div style={{ marginBottom: 16 }}>
-          <SignInForm dark={dark} onSignIn={signIn} error={signInError} />
-        </div>
-      )}
-
-      {/* Content area — changes based on tab state */}
-      {tabState.kind === "loading" ? (
+      {/* Content area — changes based on tab state and auth */}
+      {tabState.kind === "loading" || authLoading ? (
         <div
           style={{
             textAlign: "center",
@@ -351,6 +237,39 @@ function Popup() {
         </div>
       ) : !isSupported ? (
         <UnsupportedState dark={dark} />
+      ) : !isAuthenticated ? (
+        <button
+          id="pyla-signin-btn"
+          type="button"
+          onClick={() => void browser.tabs.create({ url: PYLA_LOGIN_URL })}
+          onMouseEnter={() => setPrimaryHover(true)}
+          onMouseLeave={() => {
+            setPrimaryHover(false);
+            setPrimaryActive(false);
+          }}
+          onMouseDown={() => setPrimaryActive(true)}
+          onMouseUp={() => setPrimaryActive(false)}
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: 8,
+            width: "100%",
+            padding: "10px 14px",
+            borderRadius: 10,
+            border: "none",
+            backgroundColor: primaryHover ? "#4f46e5" : "#6366f1",
+            color: "#ffffff",
+            fontSize: 13,
+            fontWeight: 600,
+            fontFamily: FONT_STACK,
+            cursor: "pointer",
+            transform: primaryActive ? "scale(0.97)" : "scale(1)",
+            transition: `background-color ${MOTION.fast} ${MOTION.easeOut}, transform ${MOTION.fast} ${MOTION.spring}`,
+          }}
+        >
+          Sign in to Pyla
+        </button>
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
           {/* Primary: Copy Current */}
@@ -398,12 +317,6 @@ function Popup() {
             }}
           >
             {tabState.platformName} detected
-            {!isAuthenticated && (
-              <span style={{ color: "#f59e0b" }}>
-                {" "}
-                · Sign in to save Capsules
-              </span>
-            )}
           </div>
         </div>
       )}
