@@ -4,6 +4,7 @@ export const PYLA_COMPONENT_NAME = "pyla-root";
 
 export const EXTENSION_RUNTIME_MESSAGE = {
   COPY_CURRENT: "pyla:copy-current",
+  SIGN_IN_GOOGLE: "pyla:sign-in-google",
 } as const;
 
 export const EXTENSION_WINDOW_EVENT = {

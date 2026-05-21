@@ -4,6 +4,7 @@ import {
   EXTENSION_RUNTIME_MESSAGE,
   isSupportedTabUrl,
 } from "~/constants/extension-runtime";
+import { supabase } from "~/lib/supabase";
 
 // Must register plugins before isSupportedTabUrl can work
 registerBuiltinPlugins();
@@ -28,7 +29,64 @@ async function getActiveTab() {
   return tabs[0] ?? null;
 }
 
+/**
+ * Runs the full Google OAuth flow using chrome.identity (only available in
+ * the background service worker) and bootstraps the Supabase session.
+ * Returns { ok: true } on success, { ok: false, error: string } on failure.
+ */
+async function handleGoogleSignIn(): Promise<{ ok: boolean; error?: string }> {
+  try {
+    const redirectUrl = chrome.identity.getRedirectURL();
+
+    const { data, error } = await supabase.auth.signInWithOAuth({
+      provider: "google",
+      options: {
+        redirectTo: redirectUrl,
+        skipBrowserRedirect: true,
+      },
+    });
+    if (error || !data.url) throw error ?? new Error("No OAuth URL returned");
+
+    const callbackUrl = await new Promise<string>((resolve, reject) => {
+      chrome.identity.launchWebAuthFlow(
+        { url: data.url, interactive: true },
+        (responseUrl) => {
+          if (chrome.runtime.lastError) {
+            reject(new Error(chrome.runtime.lastError.message));
+          } else if (!responseUrl) {
+            reject(new Error("No response URL from OAuth flow"));
+          } else {
+            resolve(responseUrl);
+          }
+        },
+      );
+    });
+
+    // Supabase appends tokens as hash fragments on the redirect URL.
+    const params = new URLSearchParams(new URL(callbackUrl).hash.slice(1));
+    const access_token = params.get("access_token");
+    const refresh_token = params.get("refresh_token");
+    if (!access_token || !refresh_token) throw new Error("No tokens in OAuth callback");
+
+    const { error: sessionError } = await supabase.auth.setSession({ access_token, refresh_token });
+    if (sessionError) throw sessionError;
+
+    return { ok: true };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "Sign-in failed";
+    return { ok: false, error: msg };
+  }
+}
+
 export default defineBackground(() => {
+  // Handle sign-in requests from the popup.
+  // chrome.identity is only available in the background service worker.
+  browser.runtime.onMessage.addListener((message) => {
+    if (message?.type === EXTENSION_RUNTIME_MESSAGE.SIGN_IN_GOOGLE) {
+      return handleGoogleSignIn();
+    }
+  });
+
   // Toolbar icon click: copy current conversation
   browser.action.onClicked.addListener((tab) => {
     void (async () => {
